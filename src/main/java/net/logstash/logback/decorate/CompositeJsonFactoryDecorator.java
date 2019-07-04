@@ -16,6 +16,7 @@ package net.logstash.logback.decorate;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.databind.MappingJsonFactory;
 
 /**
@@ -26,8 +27,14 @@ public class CompositeJsonFactoryDecorator implements JsonFactoryDecorator {
     private final List<JsonFactoryDecorator> decorators = new ArrayList<JsonFactoryDecorator>();
 
     @Override
+    @Deprecated
     public MappingJsonFactory decorate(MappingJsonFactory factory) {
-        MappingJsonFactory decoratedFactory = factory;
+        return (MappingJsonFactory) decorate((JsonFactory) factory);
+    }
+
+    @Override
+    public JsonFactory decorate(JsonFactory factory) {
+        JsonFactory decoratedFactory = factory;
         for (JsonFactoryDecorator decorator : decorators) {
             decoratedFactory = decorator.decorate(decoratedFactory);
         }

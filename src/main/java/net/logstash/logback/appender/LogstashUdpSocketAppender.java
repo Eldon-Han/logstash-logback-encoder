@@ -11,19 +11,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package net.logstash.logback.decorate;
+package net.logstash.logback.appender;
 
-import com.fasterxml.jackson.core.JsonFactory;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.Layout;
 
 /**
- * A {@link JsonFactoryDecorator} that doesn't do any decoration.
- * It just returns the factory as-is.
+ * An appender that sends log events over UDP using a custom {@link Layout}.
  */
-public class NullJsonFactoryDecorator implements JsonFactoryDecorator {
-
-    @Override
-    public JsonFactory decorate(JsonFactory factory) {
-        return factory;
-    }
+public class LogstashUdpSocketAppender extends AbstractLogstashUdpSocketAppender<ILoggingEvent> {
 
 }

@@ -16,14 +16,11 @@ package net.logstash.logback.decorate;
 import com.fasterxml.jackson.core.JsonFactory;
 
 /**
- * A {@link JsonFactoryDecorator} that doesn't do any decoration.
- * It just returns the factory as-is.
+ * A {@link JsonFactoryDecorator} that allows enabling/disabling of {@link JsonFactory} features.
  */
-public class NullJsonFactoryDecorator implements JsonFactoryDecorator {
+public class FeatureJsonFactoryDecorator extends FeatureDecorator<JsonFactory, JsonFactory.Feature> implements JsonFactoryDecorator {
 
-    @Override
-    public JsonFactory decorate(JsonFactory factory) {
-        return factory;
+    public FeatureJsonFactoryDecorator() {
+        super(JsonFactory.Feature.class, JsonFactory::enable, JsonFactory::disable);
     }
-
 }

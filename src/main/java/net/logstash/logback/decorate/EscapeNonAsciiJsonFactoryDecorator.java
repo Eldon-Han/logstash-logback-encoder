@@ -26,8 +26,14 @@ import com.fasterxml.jackson.databind.MappingJsonFactory;
 public class EscapeNonAsciiJsonFactoryDecorator implements JsonFactoryDecorator {
 
     @Override
+    @Deprecated
     public MappingJsonFactory decorate(MappingJsonFactory factory) {
-        return (MappingJsonFactory) factory.enable(JsonGenerator.Feature.ESCAPE_NON_ASCII);
+        return (MappingJsonFactory) decorate((JsonFactory) factory);
+    }
+
+    @Override
+    public JsonFactory decorate(JsonFactory factory) {
+        return factory.enable(JsonGenerator.Feature.ESCAPE_NON_ASCII);
     }
 
 }

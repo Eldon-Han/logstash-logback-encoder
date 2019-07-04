@@ -1,18 +1,20 @@
 > !! This document applies to the next version under development.
 >
-> &nbsp; &nbsp; See [here for documentation on the latest released version](https://github.com/logstash/logstash-logback-encoder/tree/logstash-logback-encoder-5.3).
+> &nbsp; &nbsp; See [here for documentation on the latest released version](https://github.com/logstash/logstash-logback-encoder/tree/logstash-logback-encoder-6.1).
 
-# Logback JSON encoder
+# Logstash Logback Encoder
 
-Provides [logback](http://logback.qos.ch/) encoders, layouts, and appenders to log in JSON format.
+Provides [logback](http://logback.qos.ch/) encoders, layouts, and appenders to log in JSON and [other formats supported by Jackson](#non-json-formats).
 
 Supports both regular _LoggingEvents_ (logged through a `Logger`) and _AccessEvents_ (logged via [logback-access](http://logback.qos.ch/access.html)).
 
-Originally written to support output in [logstash](http://logstash.net/)'s JSON format, but has evolved into a highly-configurable, general-purpose, JSON logging mechanism.  The structure of the JSON output, and the data it contains, is fully configurable.
+Originally written to support output in [logstash](http://logstash.net/)'s JSON format, but has evolved into a highly-configurable, general-purpose, structured logging mechanism for JSON and other Jackson dataformats.
+The structure of the output, and the data it contains, is fully configurable.
 
 #### Contents:
 
 * [Including it in your project](#including-it-in-your-project)
+* [Java Version Requirements](#java-version-requirements)
 * [Usage](#usage)
   * [UDP Appender](#udp-appender)
   * [TCP Appenders](#tcp-appenders)
@@ -33,12 +35,13 @@ Originally written to support output in [logstash](http://logstash.net/)'s JSON 
     * [Global Custom Fields](#global-custom-fields)
     * [Event-specific Custom Fields](#event-specific-custom-fields)
 * [AccessEvent Fields](#accessevent-fields)
-  * [Standard Fields](#standard-fields)
+  * [Standard Fields](#standard-fields-1)
   * [Header Fields](#header-fields)
 * [Customizing Standard Field Names](#customizing-standard-field-names)
 * [Customizing Version](#customizing-version)
 * [Customizing Timestamp](#customizing-timestamp)
 * [Customizing JSON Factory and Generator](#customizing-json-factory-and-generator)
+  * [Non-JSON Formats](#non-json-formats)
 * [Registering Jackson Modules](#registering-jackson-modules)
 * [Customizing Character Escapes](#customizing-character-escapes)
 * [Customizing Logger Name Length](#customizing-logger-name-length)
@@ -52,7 +55,7 @@ Originally written to support output in [logstash](http://logstash.net/)'s JSON 
     * [LoggingEvent patterns](#loggingevent-patterns)
     * [AccessEvent patterns](#accessevent-patterns)
   * [Custom JSON Provider](#custom-json-provider)
-* [Debugging](#debugging)
+* [Status Listeners](#status-listeners)
 
 
 
@@ -64,7 +67,7 @@ Maven style:
 <dependency>
     <groupId>net.logstash.logback</groupId>
     <artifactId>logstash-logback-encoder</artifactId>
-    <version>5.3</version>
+    <version>6.1</version>
 </dependency>
 <!-- Your project must also directly depend on either logback-classic or logback-access.  For example: -->
 <dependency>
@@ -113,6 +116,15 @@ For example, to ensure that maven doesn't pick different versions of logback-cor
     </dependencyManagement>
 ```
 
+## Java Version Requirements
+
+| logstash-logback-encoder | Minimum Java Version supported |
+| ------------------------ | -------------------------------|
+| &gt;= 6.0                | 1.8                            |
+| 5.x                      | 1.7                            |
+| &lt;= 4.x                | 1.6                            |
+
+
 ## Usage
 
 To log using JSON format, you must configure logback to use either:
@@ -124,7 +136,7 @@ The appenders, encoders, and layouts provided by the logstash-logback-encoder li
 
 | Format        | Protocol   | Function | LoggingEvent | AccessEvent
 |---------------|------------|----------| ------------ | -----------
-| Logstash JSON | Syslog/UDP | Appender | [`LogstashSocketAppender`](/src/main/java/net/logstash/logback/appender/LogstashSocketAppender.java) | n/a
+| Logstash JSON | Syslog/UDP | Appender | [`LogstashUdpSocketAppender`](/src/main/java/net/logstash/logback/appender/LogstashUdpSocketAppender.java) | [`LogstashAccessUdpSocketAppender`](/src/main/java/net/logstash/logback/appender/LogstashAccessUdpSocketAppender.java)
 | Logstash JSON | TCP        | Appender | [`LogstashTcpSocketAppender`](/src/main/java/net/logstash/logback/appender/LogstashTcpSocketAppender.java) | [`LogstashAccessTcpSocketAppender`](/src/main/java/net/logstash/logback/appender/LogstashAccessTcpSocketAppender.java)
 | any           | any        | Appender | [`LoggingEventAsyncDisruptorAppender`](/src/main/java/net/logstash/logback/appender/LoggingEventAsyncDisruptorAppender.java) | [`AccessEventAsyncDisruptorAppender`](/src/main/java/net/logstash/logback/appender/AccessEventAsyncDisruptorAppender.java)
 | Logstash JSON | any        | Encoder  | [`LogstashEncoder`](/src/main/java/net/logstash/logback/encoder/LogstashEncoder.java) | [`LogstashAccessEncoder`](/src/main/java/net/logstash/logback/encoder/LogstashAccessEncoder.java)
@@ -153,39 +165,59 @@ These async appenders can delegate to any other underlying logback appender.
 ### UDP Appender
 
 To output JSON for LoggingEvents to a syslog/UDP channel,
-use the `LogstashSocketAppender` in your `logback.xml` like this:
+use the `LogstashUdpSocketAppender` with a `LogstashLayout` or `LoggingEventCompositeJsonLayout`
+in your `logback.xml`, like this:
+
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
-  <appender name="stash" class="net.logstash.logback.appender.LogstashSocketAppender">
+  <appender name="stash" class="net.logstash.logback.appender.LogstashUdpSocketAppender">
     <host>MyAwesomeSyslogServer</host>
     <!-- port is optional (default value shown) -->
     <port>514</port>
+    <!-- layout is required -->
+    <layout class="net.logstash.logback.layout.LogstashLayout"/>
   </appender>
   <root level="all">
     <appender-ref ref="stash" />
   </root>
 </configuration>
 ```
-Internally, the `LogstashSocketAppender` uses a `LogstashLayout` to perform the JSON formatting.
-Therefore, by default, the output will be logstash-compatible.
+You can further customize the JSON output by customizing the layout as described in later sections.
 
-You can further customize the JSON output of `LogstashSocketAppender`
-just like you can with a `LogstashLayout` or `LogstashEncoder` as described in later sections.
-It is not necessary to configure a `<layout>` or `<encoder>` sub-element
-within the `<appender>` element in the logback configuration.
-All the properties of `LogstashLayout` or `LogstashEncoder` can be set at the `<appender>` level.
 For example, to configure [global custom fields](#global-custom-fields), you can specify
 ```xml
-  <appender name="stash" class="net.logstash.logback.appender.LogstashSocketAppender">
+  <appender name="stash" class="net.logstash.logback.appender.LogstashUdpSocketAppender">
     <host>MyAwesomeSyslogServer</host>
     <!-- port is optional (default value shown) -->
     <port>514</port>
-    <customFields>{"appname":"myWebservice"}</customFields>
+    <layout class="net.logstash.logback.layout.LogstashLayout"/>
+      <customFields>{"appname":"myWebservice"}</customFields>
+    </layout>
   </appender>
 ```
 
-There currently is no way to log AccessEvents over syslog/UDP.
+To output JSON for AccessEvents over UDP, use a `LogstashAccessUdpSocketAppender`
+with a `LogstashAccessLayout` or `AccessEventCompositeJsonLayout`
+in your `logback-access.xml`, like this:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+  <appender name="stash" class="net.logstash.logback.appender.LogstashAccessUdpSocketAppender">
+    <host>MyAwesomeSyslogServer</host>
+    <!-- port is optional (default value shown) -->
+    <port>514</port>
+
+    <layout class="net.logstash.logback.layout.LogstashAccessLayout">
+      <customFields>{"appname":"myWebservice"}</customFields>
+    </layout>
+  </appender>
+
+  <appender-ref ref="stash" />
+</configuration>
+```
+
 
 To receive syslog/UDP input in logstash, configure a [`syslog`](http://www.logstash.net/docs/latest/inputs/syslog) or [`udp`](http://www.logstash.net/docs/latest/inputs/udp) input with the [`json`](http://www.logstash.net/docs/latest/codecs/json) codec in logstash's configuration like this:
 ```
@@ -200,9 +232,8 @@ input {
 ### TCP Appenders
 
 To output JSON for LoggingEvents over TCP, use a `LogstashTcpSocketAppender`
-with a `LogstashEncoder` or `LoggingEventCompositeJsonEncoder`.
-
-Example logging appender configuration in `logback.xml`:
+with a `LogstashEncoder` or `LoggingEventCompositeJsonEncoder`
+in your `logback.xml`, like this:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -222,9 +253,9 @@ Example logging appender configuration in `logback.xml`:
 
 
 To output JSON for AccessEvents over TCP, use a `LogstashAccessTcpSocketAppender`
-with a `LogstashAccessEncoder` or `AccessEventCompositeJsonEncoder`.
+with a `LogstashAccessEncoder` or `AccessEventCompositeJsonEncoder`
+in your `logback-access.xml`, like this:
 
-Example access appender in `logback-access.xml`
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
@@ -239,7 +270,7 @@ Example access appender in `logback-access.xml`
 </configuration>
 ```
 
-Unlike the [UDP appender](#udp), an encoder must be configured for the TCP appenders.
+The TCP appenders use an encoder, rather than a layout as the [UDP appenders](#udp) . 
 You can use a `Logstash*Encoder`, `*EventCompositeJsonEncoder`, or any other logback encoder.
 All of the output formatting options are configured at the encoder level.
 
@@ -345,7 +376,11 @@ The first destination is considered the <em>primary</em> destination.
 Each additional destination is considered a <em>secondary</em> destination.
 This strategy prefers the primary destination, unless it is down.
 The appender will attempt to connect to each destination in the order in which they are configured.
-If a connection breaks, then the appender will again attempt to connect
+If a connection attempt fails, thes the appender will attempt to connect to the next destination.
+If a connection succeeds, and then closes <em>before</em> the <tt>minConnectionTimeBeforePrimary</tt>
+has elapsed, then the appender will attempt to connect to the next destination.
+If a connection succeeds, and then closes <em>after</em> the <tt>minConnectionTimeBeforePrimary</tt>
+has elapsed, then the appender will attempt to connect
 to the destinations in the order in which they are configured,
 starting at the first/primary destination.
 <br/><br/>
@@ -354,6 +389,14 @@ destinations after a specific duration.  This will force the
 the appender to reattempt to connect to the destinations in order again.
 The <tt>secondaryConnectionTTL</tt> value does not affect connections to the
 <em>primary</em> destination.
+<br/><br/>
+The <tt>minConnectionTimeBeforePrimary</tt> (10 seconds by default) specifies
+the minimum amount of time that a sucessfully established connection
+must remain open before the next connection attempt will try the primary.
+i.e. If a connection stays open less than this amount of time,
+then the next connection attempt will attempt the next destination (instead of the primary).
+This is used to prevent a connection storm to the primary in the case the
+primary accepts a connection, and then immediately closes it. 
 <br/><br/>
 Example:
 <pre>
@@ -437,8 +480,8 @@ and configuring the appender to use it like this:
 
 #### Reconnection Delay
 
-If connecting fails to all configured destinations, the TCP appender by default will wait
-30 seconds before reattempting to connect.
+By default, the TCP appender will wait 30 seconds between connection attempts to a single destination.
+The time between connection attempts to each destination is tracked separately.
 
 This amount of time to delay can be changed by setting the `reconnectionDelay` field.
 
@@ -657,12 +700,20 @@ See the two listener interfaces for the types of notifications that can be recei
 Some example use cases for a listener are:
 
 * Monitoring metrics for events per second, event processing durations, dropped events, connections successes / failures, etc.
-* Reporting event processing errors to a different appender (that perhaps appends to a different destination).
+* Logging event processing errors to a different appender (that perhaps appends to a different destination).
+  
+A [`FailureSummaryLoggingAppenderListener`](src/main/java/net/logstash/logback/appender/listener/FailureSummaryLoggingAppenderListener.java)
+is provided that will log a warning on the first success after a series of consecutive append/send/connect failures.
+The message includes summary details of the failures that occurred (such as the number of failures, duration of the failures, etc).
+To register it:
 
-To create a listener, create a new class that extends one of the `*ListenerImpl` classes or directly implements the `*Listener` interface.
-Extending the `*ListenerImpl` class will have better backwards compatibilty in the future in case new methods are added to the interfaces.
-(Logstash-logback-encoder still supports Java 7, so default interface methods cannot be used yet.)
+```xml
+  <appender name="stash" class="net.logstash.logback.appender.LogstashAccessTcpSocketAppender">
+      <listener class="net.logstash.logback.appender.listener.FailureSummaryLoggingAppenderListener"/>
+  </appender>
+```
 
+To create your own listener, create a new class that extends one of the `*ListenerImpl` classes or directly implements the `*Listener` interface.
 Then register your listener class to an appender using the `listener` xml element like this:
 
 ```xml
@@ -1230,7 +1281,7 @@ Or customize object mapping like this:
 public class ISO8601DateDecorator implements JsonFactoryDecorator  {
 
 	@Override
-	public MappingJsonFactory decorate(MappingJsonFactory factory) {
+	public JsonFactory decorate(JsonFactory factory) {
 		ObjectMapper codec = factory.getCodec();
 		codec.setDateFormat(new ISO8601DateFormat());
 		return factory;
@@ -1246,7 +1297,52 @@ and then specify the decorator in the logback.xml file like this:
 </encoder>
 ```
 
+`JsonFactory` and `JsonGenerator` features can be enabled/disabled by using the
+`FeatureJsonFactoryDecorator` and `FeatureJsonGeneratorDecorator`, respectively.
+For example:
+
+```xml
+<encoder class="net.logstash.logback.encoder.LogstashEncoder">
+  <jsonFactoryDecorator class="net.logstash.logback.decorate.FeatureJsonFactoryDecorator">
+    <disable>USE_THREAD_LOCAL_FOR_BUFFER_RECYCLING</disable>
+  </jsonFactoryDecorator>
+  <jsonGeneratorDecorator class="net.logstash.logback.decorate.FeatureJsonGeneratorDecorator">
+    <enable>WRITE_NUMBERS_AS_STRINGS</enable>
+  </jsonGeneratorDecorator>
+</encoder>
+``` 
+
 See the [net.logstash.logback.decorate](/src/main/java/net/logstash/logback/decorate) package for other decorators.
+
+### Non-JSON Formats
+
+[JsonFactoryDecorators](#customizing-json-factory-and-generator) can be used to switch the output format
+to other formats supported by Jackson:
+* [text data formats](https://github.com/FasterXML/jackson-dataformats-text)
+* [binary data formats](https://github.com/FasterXML/jackson-dataformats-binary)
+
+Decorators are provided for Smile, CBOR, or YAML by
+[`SmileJsonFactoryDecorator`](src/main/java/net/logstash/logback/decorate/smile/SmileJsonFactoryDecorator.java),
+[`CborJsonFactoryDecorator`](src/main/java/net/logstash/logback/decorate/cbor/CborJsonFactoryDecorator.java), or
+[`YamlJsonFactoryDecorator`](src/main/java/net/logstash/logback/decorate/yaml/YamlJsonFactoryDecorator.java).
+Generator decorators are also available to enable/disable generator features of each format.
+Other formats can be supported by custom decorators.
+
+To write Smile instead of JSON (follow a similar pattern for CBOR and YAML):
+
+```xml
+<encoder class="net.logstash.logback.encoder.LogstashEncoder">
+  <!-- Log in Smile format -->
+  <jsonFactoryDecorator class="net.logstash.logback.decorate.smile.SmileJsonFactoryDecorator"/>
+  <!-- Optionally enable/disable SmileGenerator features -->
+  <jsonGeneratorDecorator class="net.logstash.logback.decorate.smile.SmileFeatureJsonGeneratorDecorator">
+    <disable>WRITE_HEADER</disable>
+  </jsonGeneratorDecorator>
+</encoder>
+``` 
+
+Be sure to include the appropriate jackson dataformat library on the runtime classpath
+(e.g. via maven/gradle dependency).  e.g. for Smile, include `jackson-dataformat-smile`.
 
 ## Registering Jackson Modules
 
@@ -1350,13 +1446,15 @@ For example, to add standard syslog headers for syslog over UDP, configure the f
 <configuration>
   <conversionRule conversionWord="syslogStart" converterClass="ch.qos.logback.classic.pattern.SyslogStartConverter"/>
 
-  <appender name="stash" class="net.logstash.logback.appender.LogstashSocketAppender">
+  <appender name="stash" class="net.logstash.logback.appender.LogstashUdpSocketAppender">
     <host>MyAwesomeSyslogServer</host>
     <!-- port is optional (default value shown) -->
     <port>514</port>
-    <prefix class="ch.qos.logback.classic.PatternLayout">
-      <pattern>%syslogStart{USER}</pattern>
-    </prefix>
+    <layout>
+      <prefix class="ch.qos.logback.classic.PatternLayout">
+        <pattern>%syslogStart{USER}</pattern>
+      </prefix>
+    </layout>
   </appender>
 
   ...
@@ -1630,6 +1728,7 @@ For LoggingEvents, the available providers and their configuration properties (d
         </p>
         <ul>
           <li><tt>pattern</tt> - JSON object string (no default)</li>          
+          <li><tt>omitEmptyFields</tt> - whether to omit fields with empty values (<tt>false</tt>)</li>          
         </ul>
       </td>
     </tr>
@@ -1845,6 +1944,7 @@ For AccessEvents, the available providers and their configuration properties (de
         </p>
         <ul>
           <li><tt>pattern</tt> - JSON object string (no default)</li>          
+          <li><tt>omitEmptyFields</tt> - whether to omit fields with empty values (<tt>false</tt>)</li>          
         </ul>
       </td>
     </tr>
@@ -1979,6 +2079,47 @@ LOGGER.info("{\"type\":\"example\",\"msg\":\"example of json message with type\"
 Note that the value that is sent for `line_long` is a number even though in your pattern it is a quoted text.
 And the json_message field value is a json object, not a string.
 
+#### Omitting fields with empty values
+ 
+The pattern provider can be configured to omit fields with the following _empty_ values:
+* `null`
+* empty string (`""`)
+* empty array (`[]`)
+* empty object (`{}`)
+* objects containing only fields with empty values
+* arrays containing only empty values
+
+To omit fields with empty values, configure `omitEmptyFields` to `true` (default is `false`), like this:
+
+```xml
+<encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
+  <providers>
+    <pattern>
+      <omitEmptyFields>true</omitEmptyFields>
+      <pattern>
+        {
+          "logger": "%logger",
+          "level": "%level",
+          "thread": "%thread",
+          "message": "%message",
+          "traceId": "%mdc{traceId}"
+        }
+      </pattern>
+    </pattern>
+  </providers>
+</encoder>
+```
+
+If the MDC did not contain a `traceId` entry, then a JSON log event from the above pattern would not contain the `traceId` field...
+
+```
+{
+  "logger": "com.example...",
+  "level": "DEBUG",
+  "thread": "exec-1",
+  "message": "Hello World!"
+}
+```
 
 #### LoggingEvent patterns
 
@@ -2098,17 +2239,19 @@ or a `LogstashEncoder` like this:
 
 You can do something similar for `AccessEventCompositeJsonEncoder` and `LogstashAccessEnceder` as well, if your `JsonProvider` handles `IAccessEvent`s.
 
-## Debugging
+## Status Listeners
 
 During execution, the encoders/appenders/layouts provided in logstash-logback-encoder
-will add logback status messages to the logback `StatusManager`.
+will add logback status messages to the logback [`StatusManager`](https://logback.qos.ch/apidocs/ch/qos/logback/core/status/StatusManager.html).
+These status messages are typically reported via a logback [`StatusListener`](https://logback.qos.ch/apidocs/ch/qos/logback/core/status/StatusListener.html).
 
-By default, logback only shows WARN/ERROR status messages on the console during configuration.
-No messages are output during actual operation (even if they are WARN/ERROR).
-
-If you are having trouble identifying causes of problems (e.g. events are not getting delivered),
-then you can enable logback debugging or add a status listener as specified in
-the [logback manual](http://logback.qos.ch/manual/configuration.html#automaticStatusPrinting).
+Since the [async appenders](#async-appenders) (especially the [tcp appenders](#tcp-appenders))
+report warnings and errors via the status manager, a default status listener that
+outputs WARN and ERROR level status messages to standard out
+will be registered on startup if a status listener has not already been registered.
+To disable the automatic registering of the default status listener by an appender, do one of the following:
+* register a different logback [status listener](https://logback.qos.ch/manual/configuration.html#dumpingStatusData), or
+* set `<addDefaultStatusListener>false</addDefaultStatusListener` in each async appender.
 
 ### Profiling
 

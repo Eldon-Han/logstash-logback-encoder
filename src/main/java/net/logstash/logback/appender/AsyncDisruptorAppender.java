@@ -25,12 +25,15 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
+import ch.qos.logback.core.status.OnConsoleStatusListener;
+import ch.qos.logback.core.status.Status;
 import net.logstash.logback.appender.listener.AppenderListener;
 import ch.qos.logback.access.spi.IAccessEvent;
 import ch.qos.logback.classic.AsyncAppender;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.UnsynchronizedAppenderBase;
 import ch.qos.logback.core.spi.DeferredProcessingAware;
+import net.logstash.logback.status.LevelFilteringStatusListener;
 
 import com.lmax.disruptor.BlockingWaitStrategy;
 import com.lmax.disruptor.EventFactory;
@@ -174,6 +177,12 @@ public abstract class AsyncDisruptorAppender<Event extends DeferredProcessingAwa
      * value may not be honored.
      */
     private boolean useDaemonThread = true;
+
+    /**
+     * When true, if no status listener is registered, then a default {@link OnConsoleStatusListener}
+     * will be registered, so that error messages are seen on the console.
+     */
+    private boolean addDefaultStatusListener = true;
     
     /**
      * For every droppedWarnFrequency consecutive dropped events, log a warning.
@@ -355,6 +364,15 @@ public abstract class AsyncDisruptorAppender<Event extends DeferredProcessingAwa
     @SuppressWarnings("unchecked")
     @Override
     public void start() {
+        if (addDefaultStatusListener && getStatusManager() != null && getStatusManager().getCopyOfStatusListenerList().isEmpty()) {
+            LevelFilteringStatusListener statusListener = new LevelFilteringStatusListener();
+            statusListener.setLevelValue(Status.WARN);
+            statusListener.setDelegate(new OnConsoleStatusListener());
+            statusListener.setContext(getContext());
+            statusListener.start();
+            getStatusManager().add(statusListener);
+        }
+
         if (this.eventHandler == null) {
             addError("No eventHandler was configured for appender " + name + ".");
             return;
@@ -624,4 +642,11 @@ public abstract class AsyncDisruptorAppender<Event extends DeferredProcessingAwa
         this.listeners.remove(listener);
     }
 
+    public boolean isAddDefaultStatusListener() {
+        return addDefaultStatusListener;
+    }
+
+    public void setAddDefaultStatusListener(boolean addDefaultStatusListener) {
+        this.addDefaultStatusListener = addDefaultStatusListener;
+    }
 }
